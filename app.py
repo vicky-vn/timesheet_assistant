@@ -1,14 +1,12 @@
 import streamlit as st
 from datetime import datetime, timedelta
 
-# Page config
 st.set_page_config(
     page_title="Time Difference Calculator",
     page_icon="⏱️",
     layout="centered"
 )
 
-# Custom CSS
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap');
@@ -37,6 +35,34 @@ st.markdown("""
         color: #777;
         margin-bottom: 2.5rem;
         font-weight: 300;
+    }
+
+    .picker-label {
+        font-family: 'Space Mono', monospace;
+        font-size: 0.75rem;
+        color: #777;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        margin-bottom: 0.6rem;
+    }
+
+    .picker-wrapper {
+        background: #151515;
+        border: 1px solid #2a2a2a;
+        border-radius: 12px;
+        padding: 1.2rem 1.5rem 1.5rem 1.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .picker-dot {
+        font-family: 'Space Mono', monospace;
+        font-size: 2rem;
+        font-weight: 700;
+        color: #e8ff47;
+        display: flex;
+        align-items: flex-end;
+        padding-bottom: 0.4rem;
+        line-height: 1;
     }
 
     .result-box {
@@ -101,24 +127,24 @@ st.markdown("""
         margin: 2rem 0;
     }
 
-    /* Override Streamlit input styles */
-    .stSelectbox > div > div {
-        background-color: #1a1a1a !important;
-        border: 1px solid #2a2a2a !important;
+    /* Selectbox overrides */
+    div[data-testid="stSelectbox"] > label {
+        color: #666 !important;
+        font-family: 'Space Mono', monospace !important;
+        font-size: 0.7rem !important;
+        letter-spacing: 1px !important;
+        text-transform: uppercase !important;
+    }
+
+    div[data-testid="stSelectbox"] > div > div {
+        background-color: #1e1e1e !important;
+        border: 1px solid #333 !important;
         color: #f0f0f0 !important;
         border-radius: 8px !important;
         font-family: 'Space Mono', monospace !important;
-    }
-
-    .stSelectbox label {
-        color: #aaa !important;
-        font-family: 'DM Sans', sans-serif !important;
-        font-size: 0.9rem !important;
-        font-weight: 400 !important;
-    }
-
-    div[data-testid="stSelectbox"] > label {
-        color: #aaa !important;
+        font-size: 1.0rem !important;
+        font-weight: 700 !important;
+        text-align: center !important;
     }
 
     .error-box {
@@ -135,31 +161,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-FORMATS = [
-    "%I:%M %p",   # 10:07 AM
-    "%I:%M%p",    # 10:07AM
-    "%H:%M",      # 22:07
-    "%I %p",      # 10 AM
-    "%I%p",       # 10AM
-    "%H",         # 22
-]
-
-
-def parse_time(raw: str):
-    """Try multiple formats; return datetime or None."""
-    raw = raw.strip()
-    for fmt in FORMATS:
-        try:
-            return datetime.strptime(raw, fmt)
-        except ValueError:
-            continue
-    return None
+def build_time(hour: int, minute: int, period: str) -> datetime:
+    """Construct a datetime from picker values."""
+    time_str = f"{hour}:{minute:02d} {period}"
+    return datetime.strptime(time_str, "%I:%M %p")
 
 
 def calculate_diff(start_dt, end_dt, break_minutes=30):
     """Calculate time difference minus break, return hours as float."""
     if end_dt <= start_dt:
-        end_dt += timedelta(days=1)  # Handle overnight shifts
+        end_dt += timedelta(days=1)
     diff = end_dt - start_dt
     total_minutes = diff.total_seconds() / 60
     result_minutes = total_minutes - break_minutes
@@ -171,47 +182,71 @@ def calculate_diff(start_dt, end_dt, break_minutes=30):
 st.markdown('<div class="main-title">⏱ Time Diff</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Calculate working hours with break deduction</div>', unsafe_allow_html=True)
 
-st.markdown(
-    '<p style="color:#555; font-size:0.8rem; font-family: Space Mono, monospace; margin-bottom:1.2rem;">'
-    'Accepted formats: &nbsp;<span style="color:#e8ff47">10:07 AM &nbsp;·&nbsp; 9:45 PM &nbsp;·&nbsp; 14:30 &nbsp;·&nbsp; 10AM</span>'
-    '</p>',
-    unsafe_allow_html=True
-)
+HOURS = list(range(1, 13))           # 1 – 12
+MINUTES = [f"{m:02d}" for m in range(0, 60, 5)]   # 00, 05, 10 … 55
+PERIODS = ["AM", "PM"]
 
-col1, col2 = st.columns(2)
+# --- Start Time Picker ---
+st.markdown('<div class="picker-label">🟢 &nbsp; Start Time</div>', unsafe_allow_html=True)
+with st.container():
+    c1, c2, colon_col, c3, c4 = st.columns([2, 2, 0.5, 2, 2])
+    with c1:
+        start_hour = st.selectbox("Hour", HOURS, index=HOURS.index(10), key="sh", label_visibility="collapsed")
+    with c2:
+        start_min = st.selectbox("Min", MINUTES, index=0, key="sm", label_visibility="collapsed")
+    with colon_col:
+        st.markdown('<div class="picker-dot">:</div>', unsafe_allow_html=True)
+    with c3:
+        start_period = st.selectbox("AM/PM", PERIODS, index=0, key="sp", label_visibility="collapsed")
+    with c4:
+        st.empty()  # spacer to keep visual balance
 
-with col1:
-    start_raw = st.text_input("🟢 Start Time", value="10:00 AM", placeholder="e.g. 9:17 AM")
+st.markdown("<div style='margin-top: 1.2rem'></div>", unsafe_allow_html=True)
 
-with col2:
-    end_raw = st.text_input("🔴 End Time", value="8:00 PM", placeholder="e.g. 6:45 PM")
+# --- End Time Picker ---
+st.markdown('<div class="picker-label">🔴 &nbsp; End Time</div>', unsafe_allow_html=True)
+with st.container():
+    d1, d2, colon_col2, d3, d4 = st.columns([2, 2, 0.5, 2, 2])
+    with d1:
+        end_hour = st.selectbox("Hour", HOURS, index=HOURS.index(8), key="eh", label_visibility="collapsed")
+    with d2:
+        end_min = st.selectbox("Min", MINUTES, index=0, key="em", label_visibility="collapsed")
+    with colon_col2:
+        st.markdown('<div class="picker-dot">:</div>', unsafe_allow_html=True)
+    with d3:
+        end_period = st.selectbox("AM/PM", PERIODS, index=1, key="ep", label_visibility="collapsed")
+    with d4:
+        st.empty()
 
-start_dt = parse_time(start_raw)
-end_dt = parse_time(end_raw)
+# --- Build datetimes ---
+start_dt = build_time(start_hour, int(start_min), start_period)
+end_dt = build_time(end_hour, int(end_min), end_period)
 
-if not start_dt:
-    st.markdown(f'<div class="error-box">⚠️ Could not parse start time: <b>"{start_raw}"</b><br>Try formats like <code>9:17 AM</code>, <code>14:30</code>, or <code>10AM</code></div>', unsafe_allow_html=True)
-elif not end_dt:
-    st.markdown(f'<div class="error-box">⚠️ Could not parse end time: <b>"{end_raw}"</b><br>Try formats like <code>6:45 PM</code>, <code>18:00</code>, or <code>8PM</code></div>', unsafe_allow_html=True)
+# --- Same time guard ---
+if start_dt == end_dt:
+    st.markdown("""
+    <div class="error-box">
+        ⚠️ Start and end times are identical. Please select a different end time.
+    </div>
+    """, unsafe_allow_html=True)
 else:
     total_mins, result_mins, result_hours = calculate_diff(start_dt, end_dt)
 
     if result_mins <= 0:
         st.markdown("""
         <div class="error-box">
-            ⚠️ The result is zero or negative after subtracting the 30-minute break. 
+            ⚠️ The result is zero or negative after subtracting the 30-minute break.
             Please choose a wider time range.
         </div>
         """, unsafe_allow_html=True)
     else:
-        display_val = f"{result_hours:.1f}" if result_hours != int(result_hours) else f"{int(result_hours)}.0"
+        display_val = f"{result_hours:.1f}"
 
         start_fmt = start_dt.strftime("%I:%M %p").lstrip("0")
         end_fmt = end_dt.strftime("%I:%M %p").lstrip("0")
 
         st.markdown(f"""
         <div class="result-box">
-            <div class="result-label">Net Working Hours</div>
             <div class="result-value">{display_val}</div>
             <div class="result-unit">hours</div>
         </div>
@@ -244,4 +279,4 @@ else:
         """, unsafe_allow_html=True)
 
 st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-st.markdown('<p style="color:#333; font-size:0.75rem; text-align:center; font-family: Space Mono, monospace;">30-min break auto-deducted · overnight shifts supported</p>', unsafe_allow_html=True)
+# st.markdown('<p style="color:#333; font-size:0.75rem; text-align:center; font-family: Space Mono, monospace;">30-min break auto-deducted · overnight shifts supported</p>', unsafe_allow_html=True)
