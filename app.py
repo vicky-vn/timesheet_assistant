@@ -87,17 +87,31 @@ st.markdown("""
         border-radius: 8px; padding: 1rem 1.5rem; margin-top: 1rem;
         font-family: 'DM Sans', sans-serif; color: #ff6b6b; font-size: 0.9rem;
     }
+
+    /* Default quick pick button */
     div[data-testid="stButton"] button {
-        background: #151515 !important; border: 1px solid #2a2a2a !important;
-        border-radius: 8px !important; color: #aaa !important;
+        background: #151515 !important;
+        border: 1px solid #2a2a2a !important;
+        border-radius: 8px !important;
+        color: #666 !important;
         font-family: 'Space Mono', monospace !important;
-        font-size: 0.72rem !important; padding: 0.45rem 0.4rem !important;
-        width: 100% !important; transition: all 0.15s ease !important;
+        font-size: 0.72rem !important;
+        padding: 0.45rem 0.4rem !important;
+        width: 100% !important;
+        transition: all 0.15s ease !important;
     }
     div[data-testid="stButton"] button:hover {
         border-color: #e8ff47 !important;
         color: #e8ff47 !important;
         background: #1a1a1a !important;
+    }
+
+    /* Active quick pick button — targets container with data-active */
+    div[data-active="true"] div[data-testid="stButton"] button {
+        background: #1f2200 !important;
+        border: 1px solid #e8ff47 !important;
+        color: #e8ff47 !important;
+        box-shadow: 0 0 12px rgba(232, 255, 71, 0.15) !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -106,8 +120,7 @@ st.markdown("""
 # --- Constants ---
 
 HOURS = list(range(1, 13))
-ALL_MINUTES_RAW = sorted(set(range(0, 60, 5)) | {14, 15, 45})
-MINUTES = [f"{m:02d}" for m in ALL_MINUTES_RAW]
+MINUTES = [f"{m:02d}" for m in range(0, 60, 5)]
 PERIODS = ["AM", "PM"]
 
 DEFAULT_SLOTS = [
@@ -140,6 +153,11 @@ def apply_slot(slot):
     st.session_state["picker_version"] += 1
 
 
+def is_active_slot(slot):
+    """Check if this slot matches current picker state exactly."""
+    return all(st.session_state[k] == slot[k] for k in ["sh", "sm", "sp", "eh", "em", "ep"])
+
+
 def build_time(hour: int, minute: str, period: str) -> datetime:
     return datetime.strptime(f"{hour}:{minute} {period}", "%I:%M %p")
 
@@ -155,8 +173,6 @@ def calculate_diff(start_dt, end_dt, break_minutes=30):
 
 # --- on_change callbacks ---
 
-v = st.session_state["picker_version"]
-
 def on_change_sh(): st.session_state["sh"] = st.session_state[f"_sh_{st.session_state['picker_version']}"]
 def on_change_sm(): st.session_state["sm"] = st.session_state[f"_sm_{st.session_state['picker_version']}"]
 def on_change_sp(): st.session_state["sp"] = st.session_state[f"_sp_{st.session_state['picker_version']}"]
@@ -168,7 +184,9 @@ def on_change_ep(): st.session_state["ep"] = st.session_state[f"_ep_{st.session_
 # --- UI ---
 
 st.markdown('<div class="main-title">⏱ Time Diff</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Calculate working hours with 30 mins unpaid break </div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Calculated with 30 mins unpaid break</div>', unsafe_allow_html=True)
+
+v = st.session_state["picker_version"]
 
 # Start picker
 st.markdown('<div class="picker-label">🟢 &nbsp; Start Time</div>', unsafe_allow_html=True)
@@ -208,15 +226,22 @@ with d3:
         index=PERIODS.index(st.session_state["ep"]),
         key=f"_ep_{v}", on_change=on_change_ep, label_visibility="collapsed")
 
-# --- Quick picks ---
+# --- Quick picks with active highlight ---
 
 st.markdown('<div class="quick-pick-label">⚡ Quick Pick</div>', unsafe_allow_html=True)
 qcols = st.columns(len(DEFAULT_SLOTS))
 for i, slot in enumerate(DEFAULT_SLOTS):
     with qcols[i]:
+        active = is_active_slot(slot)
+        # Inject a wrapper div with data-active attribute to drive CSS
+        st.markdown(
+            f'<div data-active="{str(active).lower()}">',
+            unsafe_allow_html=True
+        )
         if st.button(slot["label"], key=f"slot_{i}"):
             apply_slot(slot)
             st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # --- Build datetimes ---
 
