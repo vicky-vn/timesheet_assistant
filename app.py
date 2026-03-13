@@ -115,7 +115,7 @@ DEFAULT_SLOTS = [
     {"label": "9:30→6:45PM", "sh": 9, "sm": "30", "sp": "AM", "eh": 6, "em": "45", "ep": "PM"},
     {"label": "9:30→7:15PM", "sh": 9, "sm": "30", "sp": "AM", "eh": 7, "em": "15", "ep": "PM"},
     {"label": "9:30→7:45PM", "sh": 9, "sm": "30", "sp": "AM", "eh": 7, "em": "45", "ep": "PM"},
-    {"label": "9:30→8:14PM", "sh": 9, "sm": "30", "sp": "AM", "eh": 8, "em": "14", "ep": "PM"},
+    {"label": "9:30→8:15PM", "sh": 9, "sm": "30", "sp": "AM", "eh": 8, "em": "15", "ep": "PM"},
 ]
 
 
@@ -126,18 +126,19 @@ def init_state():
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+    if "picker_version" not in st.session_state:
+        st.session_state["picker_version"] = 0
 
 init_state()
 
 
-# --- Slot apply ---
+# --- Helpers ---
 
 def apply_slot(slot):
     for k in ["sh", "sm", "sp", "eh", "em", "ep"]:
         st.session_state[k] = slot[k]
+    st.session_state["picker_version"] += 1
 
-
-# --- Helpers ---
 
 def build_time(hour: int, minute: str, period: str) -> datetime:
     return datetime.strptime(f"{hour}:{minute} {period}", "%I:%M %p")
@@ -152,20 +153,22 @@ def calculate_diff(start_dt, end_dt, break_minutes=30):
     return total_minutes, result_minutes, result_minutes / 60
 
 
-# --- on_change callbacks to sync widget → state ---
+# --- on_change callbacks ---
 
-def on_change_sh(): st.session_state["sh"] = st.session_state["_sh"]
-def on_change_sm(): st.session_state["sm"] = st.session_state["_sm"]
-def on_change_sp(): st.session_state["sp"] = st.session_state["_sp"]
-def on_change_eh(): st.session_state["eh"] = st.session_state["_eh"]
-def on_change_em(): st.session_state["em"] = st.session_state["_em"]
-def on_change_ep(): st.session_state["ep"] = st.session_state["_ep"]
+v = st.session_state["picker_version"]
+
+def on_change_sh(): st.session_state["sh"] = st.session_state[f"_sh_{st.session_state['picker_version']}"]
+def on_change_sm(): st.session_state["sm"] = st.session_state[f"_sm_{st.session_state['picker_version']}"]
+def on_change_sp(): st.session_state["sp"] = st.session_state[f"_sp_{st.session_state['picker_version']}"]
+def on_change_eh(): st.session_state["eh"] = st.session_state[f"_eh_{st.session_state['picker_version']}"]
+def on_change_em(): st.session_state["em"] = st.session_state[f"_em_{st.session_state['picker_version']}"]
+def on_change_ep(): st.session_state["ep"] = st.session_state[f"_ep_{st.session_state['picker_version']}"]
 
 
 # --- UI ---
 
 st.markdown('<div class="main-title">⏱ Time Diff</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Calculate working hours with break deduction</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Calculate working hours with 30 mins unpaid break </div>', unsafe_allow_html=True)
 
 # Start picker
 st.markdown('<div class="picker-label">🟢 &nbsp; Start Time</div>', unsafe_allow_html=True)
@@ -173,17 +176,17 @@ c1, c2, colon1, c3, _ = st.columns([2, 2, 0.4, 2, 2])
 with c1:
     st.selectbox("H", HOURS,
         index=HOURS.index(st.session_state["sh"]),
-        key="_sh", on_change=on_change_sh, label_visibility="collapsed")
+        key=f"_sh_{v}", on_change=on_change_sh, label_visibility="collapsed")
 with c2:
     st.selectbox("M", MINUTES,
         index=MINUTES.index(st.session_state["sm"]),
-        key="_sm", on_change=on_change_sm, label_visibility="collapsed")
+        key=f"_sm_{v}", on_change=on_change_sm, label_visibility="collapsed")
 with colon1:
     st.markdown('<div class="picker-dot">:</div>', unsafe_allow_html=True)
 with c3:
     st.selectbox("P", PERIODS,
         index=PERIODS.index(st.session_state["sp"]),
-        key="_sp", on_change=on_change_sp, label_visibility="collapsed")
+        key=f"_sp_{v}", on_change=on_change_sp, label_visibility="collapsed")
 
 st.markdown("<div style='margin-top:1.2rem'></div>", unsafe_allow_html=True)
 
@@ -193,17 +196,17 @@ d1, d2, colon2, d3, _ = st.columns([2, 2, 0.4, 2, 2])
 with d1:
     st.selectbox("H", HOURS,
         index=HOURS.index(st.session_state["eh"]),
-        key="_eh", on_change=on_change_eh, label_visibility="collapsed")
+        key=f"_eh_{v}", on_change=on_change_eh, label_visibility="collapsed")
 with d2:
     st.selectbox("M", MINUTES,
         index=MINUTES.index(st.session_state["em"]),
-        key="_em", on_change=on_change_em, label_visibility="collapsed")
+        key=f"_em_{v}", on_change=on_change_em, label_visibility="collapsed")
 with colon2:
     st.markdown('<div class="picker-dot">:</div>', unsafe_allow_html=True)
 with d3:
     st.selectbox("P", PERIODS,
         index=PERIODS.index(st.session_state["ep"]),
-        key="_ep", on_change=on_change_ep, label_visibility="collapsed")
+        key=f"_ep_{v}", on_change=on_change_ep, label_visibility="collapsed")
 
 # --- Quick picks ---
 
@@ -269,4 +272,3 @@ else:
         """, unsafe_allow_html=True)
 
 st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-st.markdown('<p style="color:#333; font-size:0.75rem; text-align:center; font-family: Space Mono, monospace;">30-min break auto-deducted · overnight shifts supported</p>', unsafe_allow_html=True)
