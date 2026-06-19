@@ -1,16 +1,22 @@
 # ⏱ Time Difference Calculator
 
-A clean Streamlit app that calculates net working hours between two times, automatically deducting a 30-minute break.
+A clean Streamlit app that calculates net working hours and overtime beyond a selected scheduled end, while automatically deducting a 30-minute break from net hours.
 
 ## Example
-- **Start:** 10:00 AM  
-- **End:** 8:00 PM  
-- **Gross:** 10 hours  
+- **Scheduled start:** 9:00 AM
+- **Scheduled end:** 6:15 PM
+- **Actual end:** 7:00 PM
+- **Gross:** 10 hours
 - **Minus break:** − 30 min  
-- **Result:** **9.5 hours** ✅
+- **Net result:** **9.5 hours**
+- **Overtime:** **0h 45m** ✅
 
 ## Features
-- Dropdown selectors in 30-minute increments
+- Dropdown selectors in 5-minute increments
+- Configurable scheduled start, scheduled end, and actual end
+- Quick timing presets for common day and afternoon shifts
+- Overtime presets that apply relative to the selected schedule
+- Overtime shown for work beyond the scheduled end
 - Overnight shift support (e.g. 10 PM → 6 AM)
 - Result shown as float (e.g. `9.5`, `7.75`)
 - Full breakdown (gross time, deduction, net hours)
