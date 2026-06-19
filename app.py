@@ -1,6 +1,8 @@
 import streamlit as st
 from datetime import datetime, timedelta
 
+from time_utils import calculate_diff, calculate_overtime, format_hours
+
 st.set_page_config(
     page_title="Time Difference Calculator",
     page_icon="⏱️",
@@ -82,6 +84,15 @@ st.markdown("""
         font-weight: 700 !important;
         text-align: center !important;
     }
+    div[data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        gap: 0.5rem !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        flex: 1 1 0 !important;
+        min-width: 0 !important;
+        width: 0 !important;
+    }
     .error-box {
         background: #1a0a0a; border: 1px solid #ff4747;
         border-radius: 8px; padding: 1rem 1.5rem; margin-top: 1rem;
@@ -106,8 +117,8 @@ st.markdown("""
         background: #1a1a1a !important;
     }
 
-    /* Active quick pick button — targets container with data-active */
-    div[data-active="true"] div[data-testid="stButton"] button {
+    /* Active quick pick button */
+    div[data-testid="stButton"] button[data-testid="stBaseButton-primary"] {
         background: #1f2200 !important;
         border: 1px solid #e8ff47 !important;
         color: #e8ff47 !important;
@@ -123,19 +134,32 @@ HOURS = list(range(1, 13))
 MINUTES = [f"{m:02d}" for m in range(0, 60, 5)]
 PERIODS = ["AM", "PM"]
 
-DEFAULT_SLOTS = [
-    {"label": "9:30→7:00PM", "sh": 9, "sm": "30", "sp": "AM", "eh": 7, "em": "00", "ep": "PM"},
-    {"label": "9:30→6:45PM", "sh": 9, "sm": "30", "sp": "AM", "eh": 6, "em": "45", "ep": "PM"},
-    {"label": "9:30→7:15PM", "sh": 9, "sm": "30", "sp": "AM", "eh": 7, "em": "15", "ep": "PM"},
-    {"label": "9:30→7:45PM", "sh": 9, "sm": "30", "sp": "AM", "eh": 7, "em": "45", "ep": "PM"},
-    {"label": "9:30→8:15PM", "sh": 9, "sm": "30", "sp": "AM", "eh": 8, "em": "15", "ep": "PM"},
+TIMING_SLOTS = [
+    {"label": "9–6:15", "sh": 9, "sm": "00", "sp": "AM", "seh": 6, "sem": "15", "sep": "PM"},
+    {"label": "9–6:30", "sh": 9, "sm": "00", "sp": "AM", "seh": 6, "sem": "30", "sep": "PM"},
+    {"label": "1–10:30", "sh": 1, "sm": "00", "sp": "PM", "seh": 10, "sem": "30", "sep": "PM"},
+    {"label": "1:15–10:30", "sh": 1, "sm": "15", "sp": "PM", "seh": 10, "sem": "30", "sep": "PM"},
+    {"label": "8–5:30", "sh": 8, "sm": "00", "sp": "AM", "seh": 5, "sem": "30", "sep": "PM"},
+    {"label": "8–5:15", "sh": 8, "sm": "00", "sp": "AM", "seh": 5, "sem": "15", "sep": "PM"},
+]
+
+OVERTIME_SLOTS = [
+    {"label": "0m OT", "minutes": 0},
+    {"label": "30m OT", "minutes": 30},
+    {"label": "1h OT", "minutes": 60},
+    {"label": "1h30 OT", "minutes": 90},
+    {"label": "2h OT", "minutes": 120},
 ]
 
 
 # --- Session state init ---
 
 def init_state():
-    defaults = {"sh": 9, "sm": "30", "sp": "AM", "eh": 7, "em": "00", "ep": "PM"}
+    defaults = {
+        "sh": 9, "sm": "00", "sp": "AM",
+        "seh": 6, "sem": "15", "sep": "PM",
+        "eh": 6, "em": "15", "ep": "PM",
+    }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
@@ -147,28 +171,48 @@ init_state()
 
 # --- Helpers ---
 
-def apply_slot(slot):
-    for k in ["sh", "sm", "sp", "eh", "em", "ep"]:
+def apply_timing_slot(slot):
+    for k in ["sh", "sm", "sp", "seh", "sem", "sep"]:
         st.session_state[k] = slot[k]
+    st.session_state["eh"] = slot["seh"]
+    st.session_state["em"] = slot["sem"]
+    st.session_state["ep"] = slot["sep"]
     st.session_state["picker_version"] += 1
 
 
-def is_active_slot(slot):
-    """Check if this slot matches current picker state exactly."""
-    return all(st.session_state[k] == slot[k] for k in ["sh", "sm", "sp", "eh", "em", "ep"])
+def is_active_timing_slot(slot):
+    keys = ["sh", "sm", "sp", "seh", "sem", "sep"]
+    return all(st.session_state[k] == slot[k] for k in keys)
 
 
 def build_time(hour: int, minute: str, period: str) -> datetime:
     return datetime.strptime(f"{hour}:{minute} {period}", "%I:%M %p")
 
 
-def calculate_diff(start_dt, end_dt, break_minutes=30):
-    if end_dt <= start_dt:
-        end_dt += timedelta(days=1)
-    diff = end_dt - start_dt
-    total_minutes = diff.total_seconds() / 60
-    result_minutes = total_minutes - break_minutes
-    return total_minutes, result_minutes, result_minutes / 60
+def actual_end_for_overtime(overtime_minutes):
+    scheduled_end = build_time(
+        st.session_state["seh"],
+        st.session_state["sem"],
+        st.session_state["sep"],
+    )
+    return scheduled_end + timedelta(minutes=overtime_minutes)
+
+
+def apply_overtime_slot(overtime_minutes):
+    actual_end = actual_end_for_overtime(overtime_minutes)
+    st.session_state["eh"] = int(actual_end.strftime("%I"))
+    st.session_state["em"] = actual_end.strftime("%M")
+    st.session_state["ep"] = actual_end.strftime("%p")
+    st.session_state["picker_version"] += 1
+
+
+def is_active_overtime_slot(overtime_minutes):
+    actual_end = actual_end_for_overtime(overtime_minutes)
+    return (
+        st.session_state["eh"] == int(actual_end.strftime("%I"))
+        and st.session_state["em"] == actual_end.strftime("%M")
+        and st.session_state["ep"] == actual_end.strftime("%p")
+    )
 
 
 # --- on_change callbacks ---
@@ -176,6 +220,9 @@ def calculate_diff(start_dt, end_dt, break_minutes=30):
 def on_change_sh(): st.session_state["sh"] = st.session_state[f"_sh_{st.session_state['picker_version']}"]
 def on_change_sm(): st.session_state["sm"] = st.session_state[f"_sm_{st.session_state['picker_version']}"]
 def on_change_sp(): st.session_state["sp"] = st.session_state[f"_sp_{st.session_state['picker_version']}"]
+def on_change_seh(): st.session_state["seh"] = st.session_state[f"_seh_{st.session_state['picker_version']}"]
+def on_change_sem(): st.session_state["sem"] = st.session_state[f"_sem_{st.session_state['picker_version']}"]
+def on_change_sep(): st.session_state["sep"] = st.session_state[f"_sep_{st.session_state['picker_version']}"]
 def on_change_eh(): st.session_state["eh"] = st.session_state[f"_eh_{st.session_state['picker_version']}"]
 def on_change_em(): st.session_state["em"] = st.session_state[f"_em_{st.session_state['picker_version']}"]
 def on_change_ep(): st.session_state["ep"] = st.session_state[f"_ep_{st.session_state['picker_version']}"]
@@ -184,13 +231,13 @@ def on_change_ep(): st.session_state["ep"] = st.session_state[f"_ep_{st.session_
 # --- UI ---
 
 st.markdown('<div class="main-title">⏱ Time Diff</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Calculated with 30 mins unpaid break</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Net hours plus overtime beyond your scheduled end</div>', unsafe_allow_html=True)
 
 v = st.session_state["picker_version"]
 
-# Start picker
-st.markdown('<div class="picker-label">🟢 &nbsp; Start Time</div>', unsafe_allow_html=True)
-c1, c2, colon1, c3, _ = st.columns([2, 2, 0.4, 2, 2])
+# Scheduled start picker
+st.markdown('<div class="picker-label">🟢 &nbsp; Scheduled Start</div>', unsafe_allow_html=True)
+c1, c2, c3 = st.columns(3)
 with c1:
     st.selectbox("H", HOURS,
         index=HOURS.index(st.session_state["sh"]),
@@ -199,8 +246,6 @@ with c2:
     st.selectbox("M", MINUTES,
         index=MINUTES.index(st.session_state["sm"]),
         key=f"_sm_{v}", on_change=on_change_sm, label_visibility="collapsed")
-with colon1:
-    st.markdown('<div class="picker-dot">:</div>', unsafe_allow_html=True)
 with c3:
     st.selectbox("P", PERIODS,
         index=PERIODS.index(st.session_state["sp"]),
@@ -208,9 +253,27 @@ with c3:
 
 st.markdown("<div style='margin-top:1.2rem'></div>", unsafe_allow_html=True)
 
-# End picker
-st.markdown('<div class="picker-label">🔴 &nbsp; End Time</div>', unsafe_allow_html=True)
-d1, d2, colon2, d3, _ = st.columns([2, 2, 0.4, 2, 2])
+# Scheduled end picker
+st.markdown('<div class="picker-label">🟡 &nbsp; Scheduled End</div>', unsafe_allow_html=True)
+s1, s2, s3 = st.columns(3)
+with s1:
+    st.selectbox("H", HOURS,
+        index=HOURS.index(st.session_state["seh"]),
+        key=f"_seh_{v}", on_change=on_change_seh, label_visibility="collapsed")
+with s2:
+    st.selectbox("M", MINUTES,
+        index=MINUTES.index(st.session_state["sem"]),
+        key=f"_sem_{v}", on_change=on_change_sem, label_visibility="collapsed")
+with s3:
+    st.selectbox("P", PERIODS,
+        index=PERIODS.index(st.session_state["sep"]),
+        key=f"_sep_{v}", on_change=on_change_sep, label_visibility="collapsed")
+
+st.markdown("<div style='margin-top:1.2rem'></div>", unsafe_allow_html=True)
+
+# Actual end picker
+st.markdown('<div class="picker-label">🔴 &nbsp; Actual End</div>', unsafe_allow_html=True)
+d1, d2, d3 = st.columns(3)
 with d1:
     st.selectbox("H", HOURS,
         index=HOURS.index(st.session_state["eh"]),
@@ -219,34 +282,44 @@ with d2:
     st.selectbox("M", MINUTES,
         index=MINUTES.index(st.session_state["em"]),
         key=f"_em_{v}", on_change=on_change_em, label_visibility="collapsed")
-with colon2:
-    st.markdown('<div class="picker-dot">:</div>', unsafe_allow_html=True)
 with d3:
     st.selectbox("P", PERIODS,
         index=PERIODS.index(st.session_state["ep"]),
         key=f"_ep_{v}", on_change=on_change_ep, label_visibility="collapsed")
 
-# --- Quick picks with active highlight ---
+# --- Timing and overtime quick picks ---
 
-st.markdown('<div class="quick-pick-label">⚡ Quick Pick</div>', unsafe_allow_html=True)
-qcols = st.columns(len(DEFAULT_SLOTS))
-for i, slot in enumerate(DEFAULT_SLOTS):
-    with qcols[i]:
-        active = is_active_slot(slot)
-        # Inject a wrapper div with data-active attribute to drive CSS
-        st.markdown(
-            f'<div data-active="{str(active).lower()}">',
-            unsafe_allow_html=True
-        )
-        if st.button(slot["label"], key=f"slot_{i}"):
-            apply_slot(slot)
+st.markdown('<div class="quick-pick-label">🕒 Actual Timing</div>', unsafe_allow_html=True)
+tcols = st.columns(len(TIMING_SLOTS))
+for i, slot in enumerate(TIMING_SLOTS):
+    with tcols[i]:
+        active = is_active_timing_slot(slot)
+        if st.button(
+            slot["label"],
+            key=f"timing_slot_{i}",
+            type="primary" if active else "secondary",
+        ):
+            apply_timing_slot(slot)
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown('<div class="quick-pick-label">⚡ Overtime</div>', unsafe_allow_html=True)
+qcols = st.columns(len(OVERTIME_SLOTS))
+for i, slot in enumerate(OVERTIME_SLOTS):
+    with qcols[i]:
+        active = is_active_overtime_slot(slot["minutes"])
+        if st.button(
+            slot["label"],
+            key=f"overtime_slot_{i}",
+            type="primary" if active else "secondary",
+        ):
+            apply_overtime_slot(slot["minutes"])
+            st.rerun()
 
 # --- Build datetimes ---
 
 start_dt = build_time(st.session_state["sh"], st.session_state["sm"], st.session_state["sp"])
-end_dt   = build_time(st.session_state["eh"], st.session_state["em"], st.session_state["ep"])
+scheduled_end_dt = build_time(st.session_state["seh"], st.session_state["sem"], st.session_state["sep"])
+end_dt = build_time(st.session_state["eh"], st.session_state["em"], st.session_state["ep"])
 
 # --- Result ---
 
@@ -258,8 +331,12 @@ else:
     if result_mins <= 0:
         st.markdown('<div class="error-box">⚠️ Result is zero or negative after break deduction. Choose a wider range.</div>', unsafe_allow_html=True)
     else:
-        display_val = f"{result_hours:.1f}"
+        overtime_mins = calculate_overtime(start_dt, scheduled_end_dt, end_dt)
+        overtime_h = overtime_mins // 60
+        overtime_m = overtime_mins % 60
+        display_val = format_hours(result_hours)
         start_fmt = start_dt.strftime("%I:%M %p").lstrip("0")
+        scheduled_end_fmt = scheduled_end_dt.strftime("%I:%M %p").lstrip("0")
         end_fmt   = end_dt.strftime("%I:%M %p").lstrip("0")
 
         st.markdown(f"""
@@ -282,6 +359,10 @@ else:
                 <span class="breakdown-accent">{start_fmt} → {end_fmt}</span>
             </div>
             <div class="breakdown-row">
+                <span>Scheduled end</span>
+                <span class="breakdown-accent">{scheduled_end_fmt}</span>
+            </div>
+            <div class="breakdown-row">
                 <span>Gross duration</span>
                 <span class="breakdown-accent">{total_h}h {total_m:02d}m</span>
             </div>
@@ -292,6 +373,10 @@ else:
             <div class="breakdown-row">
                 <span>Net time</span>
                 <span class="breakdown-accent">{net_h}h {net_m:02d}m = {result_hours:.4f} hrs</span>
+            </div>
+            <div class="breakdown-row">
+                <span>Overtime</span>
+                <span class="breakdown-accent">{overtime_h}h {overtime_m:02d}m</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
